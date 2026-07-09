@@ -1,173 +1,219 @@
-Windows Server 2022 — Domain Controller Configuration
+# Windows Server 2022 — Domain Controller Configuration
 
-Complete setup for Windows Server 2022 as the domain controller managing corp.local domain.
+Complete setup for Windows Server 2022 as the domain controller managing `corp.local` domain.
 
+---
 
-Installation & Network Setup
+## Installation & Network Setup
 
-Create the VM
+### Create the VM
 
+| Setting | Value |
+|---------|-------|
+| **Name** | DC01 |
+| **RAM** | 4096 MB |
+| **CPU** | 2 cores |
+| **Disk** | 60 GB |
+| **Network** | Host-only Adapter → vboxnet0 |
 
-Name: DC01
-RAM: 4096 MB
-CPU: 2 cores
-Disk: 60 GB
-Network: Host-only Adapter → vboxnet0
+Boot from Windows Server 2022 ISO, select Desktop Experience edition, and complete installation. Set Administrator password and rename computer to **DC01**.
 
-
-Boot from Windows Server 2022 ISO, select Desktop Experience edition, and complete installation. Set Administrator password and rename computer to DC01.
-
-Configure Static IP Address
+### Configure Static IP Address
 
 The domain controller must have a fixed IP — if it changes, the entire domain breaks.
 
-powershellNew-NetIPAddress -InterfaceAlias Ethernet -IPAddress 192.168.10.10 -PrefixLength 24 -DefaultGateway 192.168.10.1
+```powershell
+New-NetIPAddress -InterfaceAlias Ethernet -IPAddress 192.168.10.10 -PrefixLength 24 -DefaultGateway 192.168.10.1
+```
 
 Set DNS to point to itself (DC01 becomes the DNS server after AD install):
 
-powershellSet-DnsClientServerAddress -InterfaceAlias Ethernet -ServerAddresses 127.0.0.1
+```powershell
+Set-DnsClientServerAddress -InterfaceAlias Ethernet -ServerAddresses 127.0.0.1
+```
 
 Add default route for internet traffic:
 
-powershellNew-NetRoute -DestinationPrefix 0.0.0.0/0 -NextHop 192.168.10.1 -InterfaceAlias Ethernet -RouteMetric 256
+```powershell
+New-NetRoute -DestinationPrefix 0.0.0.0/0 -NextHop 192.168.10.1 -InterfaceAlias Ethernet -RouteMetric 256
+```
 
-Verify Network Connectivity
+### Verify Network Connectivity
 
 Test connectivity to pfSense:
 
-powershellping 192.168.10.1
+```powershell
+ping 192.168.10.1
+```
 
 Test internet connectivity:
 
-powershellping 8.8.8.8
+```powershell
+ping 8.8.8.8
+```
 
-Both must succeed before proceeding.
+✅ Both must succeed before proceeding.
 
+---
 
-Install Active Directory Domain Services
+## Install Active Directory Domain Services
 
-Install AD DS Role
+### Install AD DS Role
 
 Open PowerShell as Administrator:
 
-powershellInstall-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools
+```powershell
+Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools
+```
 
 This installs Active Directory Domain Services and management tools. Expect "Success: True" output after 2-3 minutes.
 
-Promote to Domain Controller
+### Promote to Domain Controller
 
-powershellInstall-ADDSForest -DomainName corp.local -SafeModeAdministratorPassword (ConvertTo-SecureString "Lab@Secure2024!" -AsPlainText -Force) -Force -NoRebootOnCompletion
+```powershell
+Install-ADDSForest -DomainName corp.local -SafeModeAdministratorPassword (ConvertTo-SecureString "Lab@Secure2024!" -AsPlainText -Force) -Force -NoRebootOnCompletion
+```
 
-Creates new Active Directory forest corp.local and promotes DC01 to domain controller. Takes 3-5 minutes. Warnings about DNS delegation are normal.
+Creates new Active Directory forest `corp.local` and promotes DC01 to domain controller. Takes 3-5 minutes. Warnings about DNS delegation are normal.
 
-Restart Server
+### Restart Server
 
-powershellRestart-Computer
+```powershell
+Restart-Computer
+```
 
 Server reboots and loads all Active Directory services.
 
-Verify Active Directory
+### Verify Active Directory
 
 After reboot:
 
-powershellGet-ADDomain
+```powershell
+Get-ADDomain
+```
 
-Expected output shows:
+**Expected output:**
 
+| Property | Value |
+|----------|-------|
+| **Name** | corp — domain short name |
+| **Forest** | corp.local — full domain name |
+| **PDCEmulator** | DC01.corp.local — DC01 is primary controller |
+| **DomainMode** | Windows2016Domain — domain functional level |
 
-Name: corp — domain short name
-Forest: corp.local — full domain name
-PDCEmulator: DC01.corp.local — DC01 is primary controller
-DomainMode: Windows2016Domain — domain functional level
+---
 
+## Create Active Directory Structure
 
+### Create Organizational Units
 
-Create Active Directory Structure
-
-Create Organizational Units
-
-powershellNew-ADOrganizationalUnit -Name "Staff" -Path "DC=corp,DC=local"
+```powershell
+New-ADOrganizationalUnit -Name "Staff" -Path "DC=corp,DC=local"
 New-ADOrganizationalUnit -Name "IT_Admins" -Path "DC=corp,DC=local"
+```
 
 OUs are folders that organize users and computers by department.
 
-Create User Accounts
+### Create User Accounts
 
-John Smith:
+**John Smith:**
 
-powershellNew-ADUser -Name "John Smith" -GivenName "John" -Surname "Smith" -SamAccountName "jsmith" -UserPrincipalName "jsmith@corp.local" -Path "OU=Staff,DC=corp,DC=local" -AccountPassword (ConvertTo-SecureString "UserPass@123" -AsPlainText -Force) -Enabled $true
+```powershell
+New-ADUser -Name "John Smith" -GivenName "John" -Surname "Smith" -SamAccountName "jsmith" -UserPrincipalName "jsmith@corp.local" -Path "OU=Staff,DC=corp,DC=local" -AccountPassword (ConvertTo-SecureString "UserPass@123" -AsPlainText -Force) -Enabled $true
+```
 
-Amy Jones:
+**Amy Jones:**
 
-powershellNew-ADUser -Name "Amy Jones" -GivenName "Amy" -Surname "Jones" -SamAccountName "ajones" -UserPrincipalName "ajones@corp.local" -Path "OU=Staff,DC=corp,DC=local" -AccountPassword (ConvertTo-SecureString "UserPass@123" -AsPlainText -Force) -Enabled $true
+```powershell
+New-ADUser -Name "Amy Jones" -GivenName "Amy" -Surname "Jones" -SamAccountName "ajones" -UserPrincipalName "ajones@corp.local" -Path "OU=Staff,DC=corp,DC=local" -AccountPassword (ConvertTo-SecureString "UserPass@123" -AsPlainText -Force) -Enabled $true
+```
 
-Bob Wilson:
+**Bob Wilson:**
 
-powershellNew-ADUser -Name "Bob Wilson" -GivenName "Bob" -Surname "Wilson" -SamAccountName "bwilson" -UserPrincipalName "bwilson@corp.local" -Path "OU=Staff,DC=corp,DC=local" -AccountPassword (ConvertTo-SecureString "UserPass@123" -AsPlainText -Force) -Enabled $true
+```powershell
+New-ADUser -Name "Bob Wilson" -GivenName "Bob" -Surname "Wilson" -SamAccountName "bwilson" -UserPrincipalName "bwilson@corp.local" -Path "OU=Staff,DC=corp,DC=local" -AccountPassword (ConvertTo-SecureString "UserPass@123" -AsPlainText -Force) -Enabled $true
+```
 
-Create Security Group
+### Create Security Group
 
-powershellNew-ADGroup -Name "Domain_Staff" -SamAccountName "Domain_Staff" -GroupCategory Security -GroupScope Global -Path "OU=Staff,DC=corp,DC=local"
+```powershell
+New-ADGroup -Name "Domain_Staff" -SamAccountName "Domain_Staff" -GroupCategory Security -GroupScope Global -Path "OU=Staff,DC=corp,DC=local"
+```
 
-Add Users to Group
+### Add Users to Group
 
-powershellAdd-ADGroupMember -Identity "Domain_Staff" -Members "jsmith", "ajones", "bwilson"
+```powershell
+Add-ADGroupMember -Identity "Domain_Staff" -Members "jsmith", "ajones", "bwilson"
+```
 
+---
 
-Verification
+## Verification
 
-List All OUs
+### List All OUs
 
-powershellGet-ADOrganizationalUnit -Filter "Name -like '*'"
+```powershell
+Get-ADOrganizationalUnit -Filter "Name -like '*'"
+```
 
-Returns: Staff, IT_Admins
+**Returns:** Staff, IT_Admins
 
-List Users in Staff OU
+### List Users in Staff OU
 
-powershellGet-ADUser -Filter "Name -like '*'" -SearchBase "OU=Staff,DC=corp,DC=local"
+```powershell
+Get-ADUser -Filter "Name -like '*'" -SearchBase "OU=Staff,DC=corp,DC=local"
+```
 
-Returns: jsmith, ajones, bwilson with full details
+**Returns:** jsmith, ajones, bwilson with full details
 
-List Group Members
+### List Group Members
 
-powershellGet-ADGroupMember -Identity "Domain_Staff"
+```powershell
+Get-ADGroupMember -Identity "Domain_Staff"
+```
 
-Returns: All three users with their details
+**Returns:** All three users with their details
 
+---
 
-Key Configuration Details
+## Key Configuration Details
 
-Static IP: 192.168.10.10/24 ensures DC01 is always reachable
+| Detail | Purpose |
+|--------|---------|
+| **Static IP:** 192.168.10.10/24 | Ensures DC01 is always reachable |
+| **DNS:** 127.0.0.1 (itself) | DC01 is authoritative for corp.local |
+| **Gateway:** 192.168.10.1 | Points to pfSense for internet routing |
+| **Domain:** corp.local | Top-level domain that all machines join |
+| **Users:** All three can log in | Can authenticate to domain-joined machines |
 
-DNS: Set to 127.0.0.1 (itself) so DC01 is authoritative for corp.local
+---
 
-Gateway: 192.168.10.1 points to pfSense for internet routing
+## What This Server Does
 
-Domain: corp.local is the top-level domain that all machines join
+- **Active Directory** — Manages user accounts, computers, groups, and policies for the entire domain
+- **DNS Server** — Resolves corp.local hostnames and forwards external queries to internet
+- **DHCP Relay** — Works with pfSense to assign IP addresses to network machines
 
-Users: All three users can log into domain-joined machines using their credentials
+> 💡 This is the central management point for the entire lab network.
 
+---
 
-What This Server Does
+## Troubleshooting
 
+### Can't ping pfSense after static IP configuration
 
-Active Directory — manages user accounts, computers, groups, and policies for the entire domain
-DNS Server — resolves corp.local hostnames and forwards external queries to internet
-DHCP Relay — works with pfSense to assign IP addresses to network machines
+```powershell
+New-NetRoute -DestinationPrefix 0.0.0.0/0 -NextHop 192.168.10.1 -InterfaceAlias Ethernet -RouteMetric 256
+```
 
+### Need to run commands as Administrator
 
-This is the central management point for the entire lab network.
+Right-click PowerShell → **"Run as Administrator"**
 
+### Verify domain joined machine can reach DC
 
-Troubleshooting
+```powershell
+ping dc01.corp.local
+```
 
-Can't ping pfSense after static IP configuration:
-
-powershellNew-NetRoute -DestinationPrefix 0.0.0.0/0 -NextHop 192.168.10.1 -InterfaceAlias Ethernet -RouteMetric 256
-
-Need to run commands as Administrator:
-Right-click PowerShell → "Run as Administrator"
-
-Verify domain joined machine can reach DC:
-
-powershellping dc01.corp.local
+---
