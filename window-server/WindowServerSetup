@@ -1,1 +1,242 @@
+Windows Server 2022 — Domain Controller Setup
 
+Complete walkthrough for installing and configuring Windows Server 2022 as the domain controller (DC) for corp.local domain.
+
+
+Installation & Network Configuration
+
+Install Windows Server 2022
+
+
+Create a new VM in VirtualBox: DC01
+
+RAM: 4096 MB minimum
+CPU: 2 cores
+Disk: 60 GB
+Network: Host-only Adapter → vboxnet0
+
+
+
+Boot from Windows Server 2022 ISO
+Choose Windows Server 2022 Standard Evaluation (Desktop Experience)
+Complete installation with custom disk setup
+Set Administrator password: Lab@Secure2024!
+Rename computer to DC01
+
+
+Configure Static IP Address
+
+The domain controller must have a fixed IP address — if it changes, the entire domain breaks.
+
+Using PowerShell:
+
+powershellNew-NetIPAddress -InterfaceAlias Ethernet -IPAddress 192.168.10.10 -PrefixLength 24 -DefaultGateway 192.168.10.1
+
+What it does:
+
+
+-IPAddress 192.168.10.10 = this server's static IP
+-PrefixLength 24 = subnet mask 255.255.255.0 (/24)
+-DefaultGateway 192.168.10.1 = pfSense is the gateway
+
+
+Set DNS to point to itself (after AD install, this server becomes the DNS server):
+
+powershellSet-DnsClientServerAddress -InterfaceAlias Ethernet -ServerAddresses 127.0.0.1
+
+Add the default route for internet traffic:
+
+powershellNew-NetRoute -DestinationPrefix 0.0.0.0/0 -NextHop 192.168.10.1 -InterfaceAlias Ethernet -RouteMetric 256
+
+Verify Network Connectivity
+
+powershellping 192.168.10.1
+
+Should get replies from pfSense. Then verify internet:
+
+powershellping 8.8.8.8
+
+Both pings must succeed before proceeding.
+
+
+Install Active Directory Domain Services
+
+Install AD DS Role
+
+Open PowerShell as Administrator and run:
+
+powershellInstall-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools
+
+What it does:
+
+
+-Name AD-Domain-Services = install the Active Directory Domain Services role
+-IncludeManagementTools = also install tools to manage AD (Active Directory Users and Computers, etc.)
+
+
+Expected output: "Success: True" after 2-3 minutes
+
+Promote to Domain Controller
+
+powershellInstall-ADDSForest -DomainName corp.local -SafeModeAdministratorPassword (ConvertTo-SecureString "Lab@Secure2024!" -AsPlainText -Force) -Force -NoRebootOnCompletion
+
+What each part does:
+
+
+Install-ADDSForest = create new Active Directory forest and promote this server to domain controller
+-DomainName corp.local = create domain named "corp.local" (your internal company domain)
+-SafeModeAdministratorPassword = set Directory Services Restore Mode (DSRM) password for disaster recovery
+-Force = don't ask for confirmation
+-NoRebootOnCompletion = install but don't auto-reboot
+
+
+Expected output: Takes 3-5 minutes. Warnings about cryptography and DNS delegation are normal and safe to ignore in a lab environment.
+
+Restart Server
+
+powershellRestart-Computer
+
+Server reboots and all Active Directory services load.
+
+Verify Active Directory is Working
+
+After reboot, run:
+
+powershellGet-ADDomain
+
+Expected output shows:
+
+
+Name: corp — your domain short name
+Forest: corp.local — your domain's full name
+PDCEmulator: DC01.corp.local — DC01 is the primary domain controller
+DomainMode: Windows2016Domain — domain functional level
+
+
+
+Create Active Directory Structure
+
+Create Organizational Units (OUs)
+
+OUs are folders in Active Directory that organize users and computers by department or function.
+
+powershellNew-ADOrganizationalUnit -Name "Staff" -Path "DC=corp,DC=local"
+
+powershellNew-ADOrganizationalUnit -Name "IT_Admins" -Path "DC=corp,DC=local"
+
+What it does:
+
+
+-Name "Staff" = create OU named "Staff"
+-Path "DC=corp,DC=local" = place it at the top level of corp.local domain
+
+
+Create User Accounts
+
+User 1: John Smith
+
+powershellNew-ADUser -Name "John Smith" -GivenName "John" -Surname "Smith" -SamAccountName "jsmith" -UserPrincipalName "jsmith@corp.local" -Path "OU=Staff,DC=corp,DC=local" -AccountPassword (ConvertTo-SecureString "UserPass@123" -AsPlainText -Force) -Enabled $true
+
+User 2: Amy Jones
+
+powershellNew-ADUser -Name "Amy Jones" -GivenName "Amy" -Surname "Jones" -SamAccountName "ajones" -UserPrincipalName "ajones@corp.local" -Path "OU=Staff,DC=corp,DC=local" -AccountPassword (ConvertTo-SecureString "UserPass@123" -AsPlainText -Force) -Enabled $true
+
+User 3: Bob Wilson
+
+powershellNew-ADUser -Name "Bob Wilson" -GivenName "Bob" -Surname "Wilson" -SamAccountName "bwilson" -UserPrincipalName "bwilson@corp.local" -Path "OU=Staff,DC=corp,DC=local" -AccountPassword (ConvertTo-SecureString "UserPass@123" -AsPlainText -Force) -Enabled $true
+
+What each part does:
+
+
+-Name "John Smith" = display name in Active Directory
+-SamAccountName "jsmith" = username for login (short name)
+-UserPrincipalName "jsmith@corp.local" = email-style login name
+-Path "OU=Staff,DC=corp,DC=local" = place user in Staff OU
+-AccountPassword (ConvertTo-SecureString "UserPass@123" -AsPlainText -Force) = set password in secure format
+-Enabled $true = account is active immediately
+
+
+Create Security Group
+
+powershellNew-ADGroup -Name "Domain_Staff" -SamAccountName "Domain_Staff" -GroupCategory Security -GroupScope Global -Path "OU=Staff,DC=corp,DC=local"
+
+What it does:
+
+
+-GroupCategory Security = this group controls access to resources
+-GroupScope Global = can be used throughout the entire forest
+-Path "OU=Staff,DC=corp,DC=local" = place group in Staff OU
+
+
+Add Users to Group
+
+powershellAdd-ADGroupMember -Identity "Domain_Staff" -Members "jsmith", "ajones", "bwilson"
+
+This allows you to apply policies to the entire group instead of individual users.
+
+
+Verification & Testing
+
+List All OUs
+
+powershellGet-ADOrganizationalUnit -Filter "Name -like '*'"
+
+Should show: Staff, IT_Admins
+
+List All Users in Staff OU
+
+powershellGet-ADUser -Filter "Name -like '*'" -SearchBase "OU=Staff,DC=corp,DC=local"
+
+Should show: jsmith, ajones, bwilson with UserPrincipalName and SID for each
+
+List Group Members
+
+powershellGet-ADGroupMember -Identity "Domain_Staff"
+
+Should show: All three users
+
+
+What Was Built
+
+Your DC01 now runs:
+
+
+Active Directory — manages user accounts, groups, computers, and policies
+DNS Server — resolves corp.local hostnames internally and forwards external queries to the internet
+DHCP Server — automatically assigns IP addresses to machines on the network (via pfSense configuration)
+
+
+This is the brain of your entire lab network. Every other machine will connect to it, authenticate through it, and receive policies from it.
+
+
+Why This Matters
+
+When you later boot a Windows 10 workstation:
+
+
+It searches DNS for "corp.local"
+DNS (running on DC01) responds with 192.168.10.10
+Workstation connects and joins the domain
+Users can log in with domain accounts (jsmith, ajones, bwilson)
+Group policies automatically apply to the workstation
+All machines are centrally managed
+
+
+This is exactly how enterprise networks operate — DC01 is the foundation.
+
+
+Common Issues & Fixes
+
+Problem: Can't ping pfSense after setting static IP
+
+Solution: The default route may not have been created. Run:
+
+powershellNew-NetRoute -DestinationPrefix 0.0.0.0/0 -NextHop 192.168.10.1 -InterfaceAlias Ethernet -RouteMetric 256
+
+Problem: AD install fails with DNS errors
+
+Solution: DNS errors during AD promotion are normal. Verify AD installed correctly with Get-ADDomain.
+
+Problem: Can't create users — "Access Denied"
+
+Solution: You must be running PowerShell as Administrator. Right-click PowerShell → "Run as Administrator".
