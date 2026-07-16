@@ -3,6 +3,7 @@
 ## What I Did
 
 Installed and configured pfSense as the network router and firewall for the home lab.
+<img width="715" height="398" alt="image" src="https://github.com/user-attachments/assets/be5e0a4f-16eb-4679-87f3-eee65484c066" />
 
 ### Initial Setup
 - Installed pfSense Plus 2.8.1 on VirtualBox
@@ -38,4 +39,4 @@ Without pfSense, your VMs can't talk to each other or reach the internet.
 
 - Add DHCP static mapping for Windows Server DC once it's built (192.168.10.10)
 - Create firewall rules to test with Kali later
-<img width="715" height="398" alt="image" src="https://github.com/user-attachments/assets/d0f90708-1f1a-4c52-bd56-e4dba95f3879" />
+
